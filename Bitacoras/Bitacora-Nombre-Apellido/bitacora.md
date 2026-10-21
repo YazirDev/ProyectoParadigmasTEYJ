@@ -1,1 +1,0 @@
-# Bitácora - Nombre Apellido
