@@ -12,6 +12,9 @@
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 #include <DHT.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <freertos/queue.h>
 #include "secrets.h"
 
 #define PIN_DHT     4
@@ -29,6 +32,48 @@ LiquidCrystal_I2C *lcd;
 WiFiClientSecure secureClient;
 
 unsigned long lastRead = 0, lastSend = 0, lastWifiTry = 0;
+
+struct EstadoAlarma {
+  float temperatura;
+  bool valido;
+};
+QueueHandle_t colaAlarma = nullptr;
+
+// Tarea independiente: una petición HTTP lenta no interrumpe los pitidos.
+void tareaAlarma(void *) {
+  EstadoAlarma estado = {0, false};
+  bool encendido = false;
+  bool estabaEnAlarma = false;
+  unsigned long cambio = millis();
+  for (;;) {
+    EstadoAlarma nuevo;
+    if (xQueueReceive(colaAlarma, &nuevo, 0) == pdTRUE) estado = nuevo;
+    bool alarma = estado.valido && (estado.temperatura > TEMP_ALARMA || estado.temperatura < TEMP_BAJA);
+    if (!alarma) {
+      if (encendido) noTone(PIN_BUZZER);
+      digitalWrite(PIN_LED, LOW);
+      encendido = false;
+      estabaEnAlarma = false;
+    } else {
+      // A mayor desviación del límite, menor pausa: 800 ms hasta 120 ms.
+      float exceso = estado.temperatura > TEMP_ALARMA ? estado.temperatura - TEMP_ALARMA : TEMP_BAJA - estado.temperatura;
+      float intensidad = constrain(exceso / 10.0f, 0.0f, 1.0f);
+      unsigned long pausa = 800 - (unsigned long)(680 * intensidad);
+      unsigned int frecuencia = 2000 + (unsigned int)(1000 * intensidad);
+      unsigned long ahora = millis();
+      if (!estabaEnAlarma || ahora - cambio >= (encendido ? 140UL : pausa)) {
+        encendido = !estabaEnAlarma || !encendido;
+        cambio = ahora;
+        // HIGH enciende el LED durante todo el pulso, sin atenuación PWM.
+        digitalWrite(PIN_LED, encendido ? HIGH : LOW);
+        if (encendido) tone(PIN_BUZZER, frecuencia);
+        else noTone(PIN_BUZZER);
+      }
+      estabaEnAlarma = true;
+    }
+    vTaskDelay(pdMS_TO_TICKS(10));
+  }
+}
 
 void conectarWifi() {
   WiFi.mode(WIFI_STA);
@@ -75,6 +120,13 @@ void setup() {
   lcd->print("Conectando WiFi");
 
   dht.begin();
+  colaAlarma = xQueueCreate(1, sizeof(EstadoAlarma));
+  if (!colaAlarma || xTaskCreate(tareaAlarma, "alarma", 4096, nullptr, 1, nullptr) != pdPASS) {
+    lcd->clear();
+    lcd->print("Error alarma");
+    Serial.println("No se pudo iniciar la tarea de alarma. Reiniciar la placa.");
+    while (true) delay(1000);
+  }
   conectarWifi();
   lcd->clear();
 }
@@ -100,15 +152,14 @@ void loop() {
     lcd->print("Error sensor    ");
     lcd->setCursor(0, 1);
     lcd->print("                ");
-    digitalWrite(PIN_LED, LOW);
-    noTone(PIN_BUZZER);
+    EstadoAlarma estado = {0, false};
+    xQueueOverwrite(colaAlarma, &estado);
     return;
   }
 
   bool alarma = (t > TEMP_ALARMA || t < TEMP_BAJA);
-  digitalWrite(PIN_LED, alarma);
-  if (alarma) tone(PIN_BUZZER, 2000);
-  else noTone(PIN_BUZZER);
+  EstadoAlarma estado = {t, true};
+  xQueueOverwrite(colaAlarma, &estado);
 
   lcd->setCursor(0, 0);
   lcd->printf("Temp: %4.1f %cC  ", t, (char)223);
