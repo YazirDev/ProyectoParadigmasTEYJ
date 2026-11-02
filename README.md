@@ -127,9 +127,9 @@ API paginada: GET /api/incubators/:id/records?page=1&limit=25&since=ISO&until=IS
 
 ## Alarma local progresiva
 
-Fuera del intervalo [25, 40] °C, el buzzer pasivo emite pulsos de 140 ms y el LED
+Fuera del intervalo [25, 40] °C, el buzzer pasivo emite pulsos de 350 ms y el LED
 parpadea sincronizado, con encendido completo durante el pulso. La pausa disminuye
 de 800 ms a 120 ms conforme la temperatura se aleja hasta 10 °C del límite; el tono
-pasa de 2000 a 3000 Hz. Al regresar al intervalo ambos se apagan. Una tarea FreeRTOS
+pasa de 3000 a 4000 Hz. Al regresar al intervalo ambos se apagan. Una tarea FreeRTOS
 independiente mantiene el patrón durante las peticiones HTTP. No aumenta el voltaje
 ni garantiza mayor volumen o luminosidad: estos dependen del circuito.

@@ -59,9 +59,9 @@ void tareaAlarma(void *) {
       float exceso = estado.temperatura > TEMP_ALARMA ? estado.temperatura - TEMP_ALARMA : TEMP_BAJA - estado.temperatura;
       float intensidad = constrain(exceso / 10.0f, 0.0f, 1.0f);
       unsigned long pausa = 800 - (unsigned long)(680 * intensidad);
-      unsigned int frecuencia = 2000 + (unsigned int)(1000 * intensidad);
+      unsigned int frecuencia = 3000 + (unsigned int)(1000 * intensidad);
       unsigned long ahora = millis();
-      if (!estabaEnAlarma || ahora - cambio >= (encendido ? 140UL : pausa)) {
+      if (!estabaEnAlarma || ahora - cambio >= (encendido ? 350UL : pausa)) {
         encendido = !estabaEnAlarma || !encendido;
         cambio = ahora;
         // HIGH enciende el LED durante todo el pulso, sin atenuación PWM.
